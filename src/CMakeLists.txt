@@ -5,7 +5,7 @@ llama_add_compile_flags()
 #
 
 # llama
-
+find_package(Threads REQUIRED) # <-- 在这里增加这一行
 add_library(llama
             ../include/llama.h
             llama.cpp
@@ -35,14 +35,15 @@ add_library(llama
             unicode-data.cpp
             unicode.cpp
             unicode.h
+            async_executor.cpp
+            interrupt_manager.cpp
             )
 
 target_include_directories(llama PRIVATE .)
 target_include_directories(llama PUBLIC ../include)
 target_compile_features   (llama PRIVATE cxx_std_17) # don't bump
 
-target_link_libraries(llama PUBLIC ggml)
-
+target_link_libraries(llama PUBLIC ggml Threads::Threads)
 if (BUILD_SHARED_LIBS)
     set_target_properties(llama PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_compile_definitions(llama PRIVATE LLAMA_BUILD)
