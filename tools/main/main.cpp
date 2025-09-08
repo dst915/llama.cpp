@@ -231,15 +231,27 @@ int main(int argc, char ** argv) {
         embd.clear();
 
         if ((int) embd_inp.size() <= n_consumed && !is_interacting) {
+            // ===================================================================
+            // ASYNC MODIFICATION 1: INTERRUPT HANDLING
+            // ===================================================================
+            // 优先检查并处理中断
             auto interrupt_tokens = interrupt_manager.get_pending_interrupt();
             if (!interrupt_tokens.empty()) {
+                // 如果有中断，则本次循环处理中断 token
+                LOG_INF("\n[SYSTEM] Interrupt detected. Injecting tool result into context...\n");
                 embd.insert(embd.end(), interrupt_tokens.begin(), interrupt_tokens.end());
             } else {
+                // 如果没有中断，才执行常规的 token 采样
                 const llama_token id = common_sampler_sample(smpl, ctx, -1);
                 common_sampler_accept(smpl, id, true);
                 embd.push_back(id);
-                --n_remain;
+
+                if (n_remain > 0) {
+                    --n_remain;
+                }
             }
+            // ===================================================================
+
         } else {
             while ((int) embd_inp.size() > n_consumed) {
                 embd.push_back(embd_inp[n_consumed]);
@@ -282,49 +294,62 @@ int main(int argc, char ** argv) {
             accumulated_output.erase(call_pos, end_pos - call_pos + 5);
         }
         
+            // ... 在主 while 循环末尾附近 ...
+
         if (!embd.empty() && llama_vocab_is_eog(vocab, embd.back()) && !(params.interactive)) {
             LOG(" [end of text]\n");
-            // ASYNC MOD: WAITING LOGIC
+
+            // ===================================================================
+            // ASYNC MODIFICATION 2: FINAL RESPONSE GENERATION
+            // ===================================================================
+            // 主生成阶段结束，但需要等待所有后台工具完成
             if (!executor.is_idle()) {
-                LOG("[SYSTEM] Model finished generating, but waiting for async tasks to complete...\n\n");
-                
-                std::vector<llama_token> all_interrupts;
+                LOG_INF("[SYSTEM] Model has paused. Now waiting for pending tools to finish...\n");
+
+                // 持续等待，直到所有后台任务完成
                 while(!executor.is_idle()) {
-                    auto interrupt_tokens = interrupt_manager.get_pending_interrupt();
-                    if (!interrupt_tokens.empty()){
-                       all_interrupts.insert(all_interrupts.end(), interrupt_tokens.begin(), interrupt_tokens.end());
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 短暂休眠，避免CPU空转
+
+                    // 在等待期间，仍然需要处理可能刚刚完成的任务结果
+                    auto final_interrupt_tokens = interrupt_manager.get_pending_interrupt();
+                    if (!final_interrupt_tokens.empty()) {
+                        LOG_INF("[SYSTEM] Processing a final tool result while waiting...\n");
+
+                        // 注入最后的结果，但不打印，因为我们将在下一步统一生成最终回复
+                        if (llama_decode(ctx, llama_batch_get_one(final_interrupt_tokens.data(), final_interrupt_tokens.size()))) {
+                            LOG_ERR("%s : failed to eval final interrupt\n", __func__); return 1;
+                        }
+                        n_past += final_interrupt_tokens.size();
                     }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
+
+                LOG_INF("\n[SYSTEM] All tools have finished. Generating the final conclusive response...\n");
                 
-                // Now process all collected interrupts
-                if (!all_interrupts.empty()) {
-                    LOG("\n--- FINAL ASSISTANT RESPONSE (after receiving tool results) ---\n");
-                    // Decode the interrupts to update the model state
-                    llama_decode(ctx, llama_batch_get_one(all_interrupts.data(), all_interrupts.size()));
-                    n_past += all_interrupts.size();
-                    
-                    // Start a new generation loop for the final answer
-                    while(n_past < n_ctx) {
-                        const llama_token id = common_sampler_sample(smpl, ctx, -1);
-                        common_sampler_accept(smpl, id, true);
-                        if (llama_vocab_is_eog(vocab, id)) {
-                            break;
-                        }
-                        printf("%s", common_token_to_piece(ctx, id).c_str());
-                        fflush(stdout);
-                        
-                        // Feed the token back to the model for the next generation step
-                        llama_token mut_id = id;
-                        struct llama_batch batch = llama_batch_get_one(&mut_id, 1);                        if (llama_decode(ctx, batch)) {
-                            LOG_ERR("Failed to decode new token\n");
-                            return 1;
-                        }
-                        n_past++;
+                // 驱动模型基于所有工具结果，生成最后的总结性回答
+                // 这个循环会一直运行直到模型再次生成 EOG token
+                while(true) {
+                    const llama_token id = common_sampler_sample(smpl, ctx, -1);
+                    common_sampler_accept(smpl, id, true);
+
+                    if (llama_vocab_is_eog(vocab, id)) {
+                        break; // 最终回复生成完毕
                     }
+
+                    // 打印最终回复的 token
+                    printf("%s", common_token_to_piece(ctx, id).c_str());
+                    fflush(stdout);
+
+                    // 将生成的 token 送回解码器，为下一个 token 做准备
+                    std::vector<llama_token> final_token_vec = { id };
+                    if (llama_decode(ctx, llama_batch_get_one(final_token_vec.data(), final_token_vec.size()))) {
+                        LOG_ERR("%s : failed to eval final response token\n", __func__); return 1;
+                    }
+                    n_past++;
                 }
+                LOG_INF("\n");
             }
-            break;
+            // ===================================================================
+            break; // 无论是否有异步任务，都结束主循环
         }
 
         if (params.interactive && n_remain <= 0 && params.n_predict >= 0) {

@@ -1,0 +1,14 @@
+[
+    {
+        "id": "parallel_task",
+        "prompt": "<|im_start|>system\nYou are a helpful shopping assistant.\n<|im_end|>\n<|im_start|>user\nQuickly, I need to know the stock for the RTX-4090 and at the same time, find details for the 'Super Air Fryer XL'.\n<|im_end|>\n<|im_start|>assistant"
+    },
+    {
+        "id": "sequential_task",
+        "prompt": "<|im_start|>system\nYou are a helpful shopping assistant.\n<|im_end|>\n<|im_start|>user\nWhat was my latest order ID, and can you check its shipping status?\n<|im_end|>\n<|im_start|>assistant"
+    },
+    {
+        "id": "single_task",
+        "prompt": "<|im_start|>system\nYou are a helpful shopping assistant.\n<|im_end|>\n<|im_start|>user\nI need a backpack for my laptop.\n<|im_end|>\n<|im_start|>assistant"
+    }
+]

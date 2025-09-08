@@ -1,0 +1,17 @@
+[
+    {
+        "id": "parallel_task",
+        "description": "测试可以并行执行的两个独立工具调用",
+        "prompt": "<|im_start|>system\nYou are a helpful shopping assistant.\n<|im_end|>\n<|im_start|>user\nQuickly, I need to know the stock for the RTX-4090 and at the same time, find details for the 'Super Air Fryer XL'.\n<|im_end|>\n<|im_start|>assistant\n[CALL] stock_check [HEAD] get_stock_by_sku('RTX-4090') [END][CALL] product_details [HEAD] get_product_details('Super Air Fryer XL') [END]"
+    },
+    {
+        "id": "sequential_task",
+        "description": "测试必须按顺序执行的两个依赖工具调用",
+        "prompt": "<|im_start|>system\nYou are a helpful shopping assistant.\n<|im_end|>\n<|im_start|>user\nWhat was my latest order ID, and can you check its shipping status?\n<|im_end|>\n<|im_start|>assistant\n[CALL] find_order [HEAD] get_latest_order_id() [END]"
+    },
+    {
+        "id": "single_task",
+        "description": "测试单个工具调用作为基线",
+        "prompt": "<|im_start|>system\nYou are a helpful shopping assistant.\n<|im_end|>\n<|im_start|>user\nI need a backpack for my laptop.\n<|im_end|>\n<|im_start|>assistant\n[CALL] search_job [HEAD] query_products(category='backpack', tags=['laptop']) [END]"
+    }
+]
